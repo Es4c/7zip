@@ -93,7 +93,7 @@
 本仓库的 NSIS 脚本反编译构建与发布流程，也参考了 [myfreeer/7z-build-nsis](https://github.com/myfreeer/7z-build-nsis) 的实现思路。
 
 - 本仓库中的相关文件：
-  - [`.github/workflows/release-windows-nsis.yml`](.github/workflows/release-windows-nsis.yml)
+  - [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml)
   - [`.github/scripts/enable-nsis-decompile-build.ps1`](.github/scripts/enable-nsis-decompile-build.ps1)
   - [`.github/scripts/package-windows-installer.ps1`](.github/scripts/package-windows-installer.ps1)
   - [`.github/scripts/package-windows-products.ps1`](.github/scripts/package-windows-products.ps1)
@@ -112,35 +112,27 @@ Windows 构建现在通过手动触发的 GitHub Release 工作流发布。
   - `x64` 和 `x86` Windows 安装器 `.exe`
   - `all-products.zip`：把所有生成的 `.exe`、`.dll`、`.sfx`、语言文件和 `Licenses/` 文档一起打进一个 zip 包，便于检查、下载或二次分发
 - 产物命名：
-  - 普通发布产物类似 `7zip-v26.00-0.0.3-windows-all-products.zip`
-  - 启用 NSIS 脚本反编译的发布产物类似 `7zip-v26.00-0.0.3-nsis-windows-all-products.zip`
+  - 普通发布产物类似 `7zip-v26.04-windows-all-products.zip`
+  - 启用 NSIS 脚本反编译的发布产物类似 `7zip-v26.04-nsis-windows-all-products.zip`
 
-Windows 安装包发布流程定义位于 [`.github/workflows/release-windows-installer.yml`](.github/workflows/release-windows-installer.yml)。
+Windows 发布流程定义位于 [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml)。
 
 - 触发方式：手动 `workflow_dispatch`
 - 输入参数：`version_tag`
-  - 必须以 `v<主版本>.<次版本>` 开头，例如 `v26.00` 或 `v26.00-0.0.1`
+  - 必须严格为 `v<主版本>.<次版本>`，例如 `v26.04`
 - 行为：
+  - 一次运行内以并行 job 同时产出 `standard` 和 `nsis` 两种产物
   - 构建 `x64` 和 `x86` Windows 二进制
   - 根据标签前缀里的 `v<主版本>.<次版本>` 下载对应上游 7-Zip 安装包骨架
   - 用仓库中的构建产物、`Lang/` 里的语言文件，以及 `DOC/` 中选定的发行文档替换安装包内容
-  - 创建或更新 GitHub Release，并上传所有生成好的安装器和 zip 产物
+  - 发布一个预发行版（pre-release），其 tag 严格等于 `version_tag`，例如 `v26.04`
+- NSIS 反编译产物说明：
+  - 在 CI 中临时打补丁，启用 `CPP/7zip/Archive/Nsis/NsisIn.h` 里的 `NSIS_SCRIPT`
+  - 在 CI 中临时移除 `CPP/Build.mak` 的 `-WX`，避免 NSIS 脚本反编译相关警告导致构建失败
+  - 产物名里带 `-nsis-` 中缀，与普通产物区分开
+  - 可使用真实的 NSIS 安装器样本测试构建出的 `7z.exe` 或 `7zFM.exe`，确认是否能列出或解压出 `[NSIS].nsi`
 - 安装包内容说明：
   - 包含 `Uninstall.exe`
   - 包含 `7zPasswordPlugins.dll`，卸载时也会删除它
   - 不安装 `Install.exe`
   - 不安装 `7zS.sfx`
-
-启用 NSIS 脚本反编译的 Windows 安装包发布流程定义位于 [`.github/workflows/release-windows-nsis.yml`](.github/workflows/release-windows-nsis.yml)。
-
-- 触发方式：手动 `workflow_dispatch`
-- 输入参数：`version_tag`
-  - 必须以 `v<主版本>.<次版本>` 开头，例如 `v26.00` 或 `v26.00-0.0.3`
-- 行为：
-  - 在 CI 中临时打补丁，启用 `CPP/7zip/Archive/Nsis/NsisIn.h` 里的 `NSIS_SCRIPT`
-  - 在 CI 中临时移除 `CPP/Build.mak` 的 `-WX`，避免 NSIS 脚本反编译相关警告导致构建失败
-  - 构建 `x64` 和 `x86` Windows 二进制
-  - 生成带 `-nsis-` 后缀的安装器和 zip 发布产物，避免与普通发布流程产物重名
-  - 创建或更新 GitHub Release，并上传所有生成好的安装器和 zip 产物
-- 验证说明：
-  - 可使用真实的 NSIS 安装器样本测试构建出的 `7z.exe` 或 `7zFM.exe`，确认是否能列出或解压出 `[NSIS].nsi`

@@ -93,7 +93,7 @@ This repository vendors Google's `compact_enc_det` library for archive entry nam
 The NSIS script decompile build and release automation also references the approach used by [myfreeer/7z-build-nsis](https://github.com/myfreeer/7z-build-nsis).
 
 - Referenced files in this repository:
-  - [`.github/workflows/release-windows-nsis.yml`](.github/workflows/release-windows-nsis.yml)
+  - [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml)
   - [`.github/scripts/enable-nsis-decompile-build.ps1`](.github/scripts/enable-nsis-decompile-build.ps1)
   - [`.github/scripts/package-windows-installer.ps1`](.github/scripts/package-windows-installer.ps1)
   - [`.github/scripts/package-windows-products.ps1`](.github/scripts/package-windows-products.ps1)
@@ -103,7 +103,7 @@ The NSIS script decompile build and release automation also references the appro
 
 ## GitHub Actions
 
-Windows builds are published through manual GitHub Release workflows.
+Windows builds are published through a manual GitHub Release workflow.
 
 - Runner: `windows-2022`
 - Toolchain: Visual Studio 2022 + `nmake`
@@ -112,33 +112,26 @@ Windows builds are published through manual GitHub Release workflows.
   - Windows installer executables for `x64` and `x86`
   - `all-products.zip`: all produced `.exe`, `.dll`, `.sfx`, language files, and `Licenses/` documentation in one archive for inspection, download, or redistribution
 - Asset naming:
-  - Normal release assets are named like `7zip-v26.00-0.0.3-windows-all-products.zip`
-  - NSIS-enabled release assets are named like `7zip-v26.00-0.0.3-nsis-windows-all-products.zip`
+  - Normal release assets are named like `7zip-v26.04-windows-all-products.zip`
+  - NSIS-enabled release assets are named like `7zip-v26.04-nsis-windows-all-products.zip`
 
-Windows installer release packaging is defined in [`.github/workflows/release-windows-installer.yml`](.github/workflows/release-windows-installer.yml).
+Windows release packaging is defined in [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml).
 
 - Trigger: manual `workflow_dispatch`
-- Input: `version_tag`, which must start with `v<major>.<minor>`, for example `v26.00` or `v26.00-0.0.1`
+- Input: `version_tag`, which must be exactly `v<major>.<minor>`, for example `v26.04`
 - Behavior:
+  - Runs both asset flavors (`standard` and `nsis`) as parallel jobs from a single run
   - Builds `x64` and `x86` Windows binaries
   - Downloads the matching upstream 7-Zip installer skeleton based on the leading `v<major>.<minor>` portion of the tag
   - Replaces the packaged binaries, language files from `Lang/`, and selected distribution documents from `DOC/`
-  - Creates or updates a GitHub Release and uploads all generated installer and zip assets
+  - Publishes one GitHub pre-release whose tag is exactly `version_tag`, for example `v26.04`
+- NSIS flavor notes:
+  - Applies a temporary build patch that enables `NSIS_SCRIPT` in `CPP/7zip/Archive/Nsis/NsisIn.h`
+  - Removes `-WX` from `CPP/Build.mak` during CI so NSIS script decompile warnings do not fail the build
+  - Packages NSIS-enabled installer and zip assets with the `-nsis-` infix in the asset name
+  - To verify the feature, test the built `7z.exe` or `7zFM.exe` against a real NSIS installer and confirm that `[NSIS].nsi` is listed or extracted
 - Installer payload notes:
   - Includes `Uninstall.exe`
   - Includes `7zPasswordPlugins.dll`, and the bundled uninstaller removes it during uninstall
   - Does not install `Install.exe`
   - Does not install `7zS.sfx`
-
-NSIS-enabled Windows installer release packaging is defined in [`.github/workflows/release-windows-nsis.yml`](.github/workflows/release-windows-nsis.yml).
-
-- Trigger: manual `workflow_dispatch`
-- Input: `version_tag`, which must start with `v<major>.<minor>`, for example `v26.00` or `v26.00-0.0.3`
-- Behavior:
-  - Applies a temporary build patch that enables `NSIS_SCRIPT` in `CPP/7zip/Archive/Nsis/NsisIn.h`
-  - Removes `-WX` from `CPP/Build.mak` during CI so NSIS script decompile warnings do not fail the build
-  - Builds `x64` and `x86` Windows binaries
-  - Packages NSIS-enabled installer and zip assets with the `-nsis-` infix in the asset name
-  - Creates or updates a GitHub Release and uploads all generated installer and zip assets
-- Validation note:
-  - To verify the feature, test the built `7z.exe` or `7zFM.exe` against a real NSIS installer and confirm that `[NSIS].nsi` is listed or extracted
