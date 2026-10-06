@@ -529,7 +529,7 @@ static int CompareRawProps(IArchiveGetRawProps *rawProps, unsigned arcIndex1, un
 
 // returns pointer to extension including '.'
 
-static const wchar_t *GetExtension(const wchar_t *name)
+static const wchar_t *GetExtension(const wchar_t *name Z7_lifetimebound)
 {
   for (const wchar_t *dotPtr = NULL;; name++)
   {
@@ -1597,6 +1597,7 @@ CAgent::CAgent():
     _updatePathPrefix_is_AltFolder(false),
     _isDeviceFile(false),
     _isHashHandler(false),
+    _progress_ArchiveOpenCallback_for_Open(NULL),
     _progress_for_Open(NULL)
 {
 }
