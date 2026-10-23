@@ -308,11 +308,13 @@ CArchiveExtractCallback::CArchiveExtractCallback():
   #ifdef Z7_USE_SECURITY_CODE
   _saclEnabled = InitLocalPrivileges();
   #endif
+  NumErrors_InCurrentArc = 0;
 }
 
 
 void CArchiveExtractCallback::InitBeforeNewArchive()
 {
+  NumErrors_InCurrentArc = 0;
 #if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
   ZoneBuf.Free();
 #endif
@@ -583,6 +585,7 @@ static void AddPathToMessage(UString &s, const FString &path)
 
 HRESULT CArchiveExtractCallback::SendMessageError(const char *message, const FString &path) const
 {
+  NumErrors_InCurrentArc++;
   UString s (message);
   AddPathToMessage(s, path);
   return _extractCallback2->MessageError(s);
@@ -591,6 +594,7 @@ HRESULT CArchiveExtractCallback::SendMessageError(const char *message, const FSt
 
 HRESULT CArchiveExtractCallback::SendMessageError_with_Error(HRESULT errorCode, const char *message, const FString &path) const
 {
+  NumErrors_InCurrentArc++;
   UString s (message);
   if (errorCode != S_OK)
   {
@@ -609,6 +613,7 @@ HRESULT CArchiveExtractCallback::SendMessageError_with_LastError(const char *mes
 
 HRESULT CArchiveExtractCallback::SendMessageError2(HRESULT errorCode, const char *message, const FString &path1, const FString &path2) const
 {
+  NumErrors_InCurrentArc++;
   UString s (message);
   if (errorCode != 0)
   {
@@ -2827,6 +2832,9 @@ Z7_COM7F_IMF(CArchiveExtractCallback::SetOperationResult(Int32 opRes))
 {
   COM_TRY_BEGIN
 
+  if (opRes != NArchive::NExtract::NOperationResult::kOK)
+    NumErrors_InCurrentArc++;
+
   // if (_isSplit) opRes = NArchive::NExtract::NOperationResult::kUnsupportedMethod;
   // printf("\nCArchiveExtractCallback::SetOperationResult: %d %s\n", opRes, GetAnsiString(_diskFilePath));
 
@@ -2896,6 +2904,9 @@ Z7_COM7F_IMF(CArchiveExtractCallback::SetOperationResult(Int32 opRes))
 
 Z7_COM7F_IMF(CArchiveExtractCallback::ReportExtractResult(UInt32 indexType, UInt32 index, Int32 opRes))
 {
+  if (opRes != NArchive::NExtract::NOperationResult::kOK)
+    NumErrors_InCurrentArc++;
+
   if (_folderArchiveExtractCallback2)
   {
     bool isEncrypted = false;

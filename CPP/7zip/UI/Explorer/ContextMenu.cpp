@@ -273,6 +273,7 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kOpen,        "Open",        IDS_CONTEXT_OPEN),
   CMD_REC( kExtract,     "Extract",     IDS_CONTEXT_EXTRACT),
   CMD_REC( kSmartExtract, "SmartExtract", IDS_CONTEXT_SMART_EXTRACT),
+  CMD_REC( kSmartExtractDelete, "SmartExtractDelete", IDS_CONTEXT_SMART_EXTRACT_DELETE),
   CMD_REC( kExtractHere, "ExtractHere", IDS_CONTEXT_EXTRACT_HERE),
   CMD_REC( kExtractTo,   "ExtractTo",   IDS_CONTEXT_EXTRACT_TO),
   CMD_REC( kTest,        "Test",        IDS_CONTEXT_TEST),
@@ -812,6 +813,15 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
         }
 
+        if ((contextMenuFlags & NContextMenuFlags::kSmartExtractDelete) != 0)
+        {
+          // Smart Extract and Delete (original archive goes to Recycle Bin after success)
+          CCommandMapItem cmi;
+          cmi.Folder = baseFolder;
+          AddCommand(kSmartExtractDelete, mainString, cmi);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        }
+
         if ((contextMenuFlags & NContextMenuFlags::kExtractHere) != 0)
         {
           // Extract Here
@@ -1242,6 +1252,7 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       }
       case kExtract:
       case kSmartExtract:
+      case kSmartExtractDelete:
       case kExtractHere:
       case kExtractTo:
       {
@@ -1254,7 +1265,8 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             (cmdID == kExtract), // showDialog
             (cmdID == kExtractTo) && _elimDup.Val, // elimDup
             _writeZone,
-            (cmdID == kSmartExtract)
+            (cmdID == kSmartExtract || cmdID == kSmartExtractDelete),
+            (cmdID == kSmartExtractDelete) // deleteArchive (to Recycle Bin)
             );
         break;
       }

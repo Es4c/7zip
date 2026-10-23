@@ -224,7 +224,7 @@ static HRESULT ExtractGroupCommand(const UStringVector &arcPaths,
 }
 
 void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder,
-    bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract)
+    bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool deleteArchive)
 {
   CExtractOptions eo;
   eo.OutputDir = us2fs(outFolder);
@@ -232,6 +232,7 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder,
   eo.ElimDup.Val = elimDup;
   eo.ElimDup.Def = elimDup;
   eo.SmartExtractMode = smartExtract;
+  eo.DeleteArchiveAfterExtract = deleteArchive;
   if (writeZone != (UInt32)(Int32)-1)
     eo.ZoneMode = (NExtract::NZoneIdMode::EEnum)writeZone;
   ExtractGroupCommand(arcPaths, showDialog, eo);

@@ -2,6 +2,7 @@
 
 #include "StdAfx.h"
 
+#include "../../../Common/DynamicBuffer.h"
 #include "../../../Common/StringConvert.h"
 
 #include "../../../Windows/FileDir.h"
@@ -15,6 +16,11 @@
 
 #include "Extract.h"
 #include "SetProperties.h"
+
+#if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+#define Z7_EXTRACT_SUPPORT_RECYCLE
+#include <shellapi.h>
+#endif
 
 using namespace NWindows;
 using namespace NFile;
@@ -31,6 +37,57 @@ static void SetErrorMessage(const char *message,
   s += " : ";
   s += fs2us(path);
 }
+
+#ifdef Z7_EXTRACT_SUPPORT_RECYCLE
+
+typedef int (WINAPI * Func_SHFileOperationW_Extract)(LPSHFILEOPSTRUCTW lpFileOp);
+
+/* Moves files to Recycle Bin (silently, no confirmation dialogs).
+   shell32.dll is loaded dynamically, so 7z.exe doesn't need to import it.
+   Returns false, if files were not moved. */
+static bool MoveFilesToRecycleBin(const UStringVector &paths)
+{
+  if (paths.IsEmpty())
+    return true;
+
+  CDynamicBuffer<WCHAR> buffer;
+  FOR_VECTOR (i, paths)
+  {
+    FString full;
+    if (!NDir::MyGetFullPathName(us2fs(paths[i]), full))
+      return false;
+    const UString path = fs2us(full);
+    // SHFileOperationW with FOF_ALLOWUNDO doesn't work with long paths
+    if (path.Len() >= MAX_PATH)
+      return false;
+    buffer.AddData(path.Ptr(), path.Len() + 1);
+  }
+  *buffer.GetCurPtrAndGrow(1) = 0; // list is double-null terminated
+
+  const HMODULE hShell = ::LoadLibraryExW(L"shell32.dll", NULL, 0x800 /* LOAD_LIBRARY_SEARCH_SYSTEM32 */);
+  if (!hShell)
+    return false;
+  bool res = false;
+  const
+  Func_SHFileOperationW_Extract f = Z7_GET_PROC_ADDRESS(
+      Func_SHFileOperationW_Extract, hShell, "SHFileOperationW");
+  if (f)
+  {
+    SHFILEOPSTRUCTW fo;
+    memset(&fo, 0, sizeof(fo));
+    fo.hwnd = NULL;
+    fo.wFunc = FO_DELETE;
+    fo.pFrom = (const WCHAR *)buffer;
+    fo.pTo = NULL;
+    fo.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+    const int r = f(&fo);
+    res = (r == 0 && !fo.fAnyOperationsAborted);
+  }
+  ::FreeLibrary(hShell);
+  return res;
+}
+
+#endif // Z7_EXTRACT_SUPPORT_RECYCLE
 
 static UString GetTopLevelExtractPathPart(const UString &path)
 {
@@ -70,10 +127,12 @@ static HRESULT DecompressArchive(
     IFolderArchiveExtractCallback *callbackFAE,
     CArchiveExtractCallback *ecs,
     UString &errorMessage,
-    UInt64 &stdInProcessed)
+    UInt64 &stdInProcessed,
+    bool &extractedOK) // true: all items were extracted without any error
 {
   const CArc &arc = arcLink.Arcs.Back();
   stdInProcessed = 0;
+  extractedOK = false;
   IInArchive *archive = arc.Archive;
   CRecordVector<UInt32> realIndices;
   
@@ -332,6 +391,15 @@ static HRESULT DecompressArchive(
   const HRESULT res2 = ecsCloser.Close();
   if (result == S_OK)
     result = res2;
+
+  extractedOK = (result == S_OK
+      && ecs->NumErrors_InCurrentArc == 0
+      && allFilesAreAllowed
+      && !options.ExcludeDirItems
+      && !options.ExcludeFileItems
+      && !options.StdInMode
+      && !options.StdOutMode
+      && !options.TestMode);
 
   return callback->ExtractResult(result);
 }
@@ -638,6 +706,7 @@ HRESULT Extract(
         arc.MTime.Set_From_FiTime(fi.MTime);
 
       UInt64 packProcessed;
+      bool extractedOK = false;
       const bool calcCrc =
         #ifndef Z7_SFX
             (hash != NULL);
@@ -653,7 +722,7 @@ HRESULT Extract(
         options,
         calcCrc,
         extractCallback, faeCallback, ecs,
-        errorMessage, packProcessed))
+        errorMessage, packProcessed, extractedOK))
 
       if (extractCallback->NeedPasswordRetry())
       {
@@ -668,6 +737,42 @@ HRESULT Extract(
       ecs->LocalProgressSpec->OutSize = ecs->UnpackSize;
       if (!errorMessage.IsEmpty())
         return E_FAIL;
+
+      #ifdef Z7_EXTRACT_SUPPORT_RECYCLE
+      if (options.DeleteArchiveAfterExtract && extractedOK)
+      {
+        // delete only if archive(s) were open without errors and warnings
+        bool arcIsClean = (arcLink.NonOpen_ErrorInfo.ErrorFormatIndex < 0);
+        FOR_VECTOR (a, arcLink.Arcs)
+          if (arcLink.Arcs[a].ErrorInfo.IsThereErrorOrWarning())
+            arcIsClean = false;
+        if (arcIsClean)
+        {
+          UStringVector toDelete;
+          toDelete.Add(arcPath);
+          FOR_VECTOR (v, arcLink.VolumePaths)
+          {
+            bool found = false;
+            FOR_VECTOR (d, toDelete)
+              if (CompareFileNames(toDelete[d], arcLink.VolumePaths[v]) == 0)
+              {
+                found = true;
+                break;
+              }
+            if (!found)
+              toDelete.Add(arcLink.VolumePaths[v]);
+          }
+          // archive files must be closed before moving them to Recycle Bin
+          arcLink.Release();
+          if (!MoveFilesToRecycleBin(toDelete))
+          {
+            UString s ("Cannot move archive to Recycle Bin : ");
+            s += arcPath;
+            RINOK(faeCallback->MessageError(s))
+          }
+        }
+      }
+      #endif
     }
     while (retryCurrentArchive);
   }

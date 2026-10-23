@@ -31,6 +31,18 @@ This fork adds an intelligent extract mode for Windows builds.
   - Adds `Smart Extract`
   - The entry is placed below `Extract files...`
 
+### Smart Extract and Delete
+
+Same as Smart Extract, but after an archive is extracted successfully, the original archive is moved to the Recycle Bin.
+
+- Command line: `7z sxd archive.7z`
+- Explorer context menu: adds `Smart Extract and Delete` (`智能解压并删除`), below `Smart Extract`. It can be toggled on the 7-Zip options page.
+- Behavior:
+  - The archive is moved to the Recycle Bin (not permanently deleted) only if every item was extracted with no errors and the archive was opened without errors or warnings.
+  - For multi-volume archives, all volumes that were used are moved to the Recycle Bin.
+  - If extraction fails or reports any error, the archive is kept.
+  - If the move to the Recycle Bin fails (for example, path longer than `MAX_PATH`), an error message is shown and the archive is kept.
+
 ### Password Book and Bundled Password Plugin
 
 This fork adds a Windows password-book workflow backed by a bundled plugin DLL.
