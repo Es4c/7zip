@@ -96,22 +96,6 @@ jobs:
           cd /d ..\7zipUninstall
           nmake PLATFORM=x64
 
-      - name: Build x86 binaries
-        shell: cmd
-        run: |
-          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvarsamd64_x86.bat"
-          cd /d CPP\7zip
-          nmake PLATFORM=x86
-
-      - name: Build x86 installer and uninstaller
-        shell: cmd
-        run: |
-          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvarsamd64_x86.bat"
-          cd /d C\Util\7zipInstall
-          nmake PLATFORM=x86
-          cd /d ..\7zipUninstall
-          nmake PLATFORM=x86
-
       - name: Package release assets
         shell: powershell
         env:
