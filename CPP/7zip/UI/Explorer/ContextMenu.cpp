@@ -751,7 +751,7 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
 
   ODS("### 150")
 
-  if (_fileNames.Size() > 0 && currentCommandID + 11 <= commandIDLast)
+  if (_fileNames.Size() > 0 && currentCommandID + 12 <= commandIDLast)
   {
     ODS("### needExtract list START")
     const bool needExtendedVerbs = ((flags & Z7_WIN_CMF_EXTENDEDVERBS) != 0);
