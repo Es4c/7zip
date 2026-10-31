@@ -1,0 +1,143 @@
+name: release-windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Version tag to use for packaging, for example v26.04
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Validate version
+    runs-on: windows-2022
+
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      upstream_version_compact: ${{ steps.meta.outputs.upstream_version_compact }}
+
+    steps:
+      - name: Validate release metadata
+        id: meta
+        shell: powershell
+        run: |
+          $tag = '${{ github.event.inputs.version_tag }}'.Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "version_tag is required."
+          }
+          if ($tag -cnotmatch '^v(?<major>\d+)\.(?<minor>\d{2})$') {
+            throw "version_tag must be v<major>.<minor>, for example v26.04"
+          }
+
+          $compact = "{0}{1:00}" -f [int]$Matches.major, [int]$Matches.minor
+
+          "release_tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "upstream_version_compact=$compact" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  build:
+    name: Build ${{ matrix.flavor }} assets
+    needs: prepare
+    runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: standard
+            asset_flavor: ""
+            artifact: windows-release-assets
+          - flavor: nsis
+            asset_flavor: nsis
+            artifact: windows-nsis-release-assets
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Locate Visual Studio
+        shell: powershell
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+          $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installPath) {
+            throw "Visual Studio with C++ build tools was not found."
+          }
+          "VS_INSTALL=$installPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Enable NSIS decompile build patches
+        if: matrix.asset_flavor == 'nsis'
+        shell: powershell
+        run: |
+          .\.github\scripts\enable-nsis-decompile-build.ps1 -RepoRoot $PWD
+
+      - name: Build x64 binaries
+        shell: cmd
+        run: |
+          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          cd /d CPP\7zip
+          nmake PLATFORM=x64
+
+      - name: Build x64 installer and uninstaller
+        shell: cmd
+        run: |
+          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          cd /d C\Util\7zipInstall
+          nmake PLATFORM=x64
+          cd /d ..\7zipUninstall
+          nmake PLATFORM=x64
+
+      - name: Build x86 binaries
+        shell: cmd
+        run: |
+          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvarsamd64_x86.bat"
+          cd /d CPP\7zip
+          nmake PLATFORM=x86
+      - name: Build x86 installer and uninstaller
+        shell: cmd
+        run: |
+          call "%VS_INSTALL%\VC\Auxiliary\Build\vcvarsamd64_x86.bat"
+          cd /d C\Util\7zipInstall
+          nmake PLATFORM=x86
+          cd /d ..\7zipUninstall
+          nmake PLATFORM=x86
+
+      - name: Package release assets
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          UPSTREAM_VERSION_COMPACT: ${{ needs.prepare.outputs.upstream_version_compact }}
+          ASSET_FLAVOR: ${{ matrix.asset_flavor }}
+        run: |
+          .\.github\scripts\package-windows-installer.ps1 `
+            -VersionTag $env:RELEASE_TAG `
+            -UpstreamVersionCompact $env:UPSTREAM_VERSION_COMPACT `
+            -AssetFlavor $env:ASSET_FLAVOR `
+            -RepoRoot $PWD `
+            -OutputDir (Join-Path $PWD "release-assets")
+
+      - name: Package build product assets
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          ASSET_FLAVOR: ${{ matrix.asset_flavor }}
+        run: |
+          .\.github\scripts\package-windows-products.ps1 `
+            -VersionTag $env:RELEASE_TAG `
+            -AssetFlavor $env:ASSET_FLAVOR `
+            -RepoRoot $PWD `
+            -OutputDir (Join-Path $PWD "release-assets")
+
+      - name: Upload packaged assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-assets\*

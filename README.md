@@ -43,25 +43,6 @@ Same as Smart Extract, but after an archive is extracted successfully, the origi
   - If extraction fails or reports any error, the archive is kept.
   - If the move to the Recycle Bin fails (for example, path longer than `MAX_PATH`), an error message is shown and the archive is kept.
 
-### Apply Password to Remaining Archives
-
-When several archives are extracted in one command and one of them asks for a password, the password dialog has an extra checkbox: `Apply to remaining archives` (`应用到剩余压缩文件`).
-
-- If it is ticked, the entered password is tried automatically on the archives that are extracted after it and ask for a password.
-- If an archive rejects that password (wrong password, or encrypted data that fails to unpack), the shared password is dropped and the password dialog is shown again for that archive. The checkbox stays ticked by default, so the newly entered password becomes the shared one.
-- A password found in the password book for an archive is used before the shared password.
-- The checkbox is shown only if more archives are still waiting; for a single archive or the last archive the dialog looks as before.
-
-### Archive Detection in the Context Menu
-
-The Explorer context menu decides whether to show the extract items (and `Open archive`) like this:
-
-1. If the file suffix is a known archive suffix (`7z`, `zip`, `rar`, `gz`, `tar`, `iso`, `001`, ...), the file is treated as an archive without reading it.
-2. Otherwise the first 512 bytes are checked for archive magic bytes (7z, zip, rar/rar5, gzip, bzip2, xz, zstd, cab, tar, wim, arj, lzh, Z, rpm, ar/deb, xar, chm, squashfs, cpio). This is done even if the suffix says audio, image, video or text, so a renamed or disguised archive (for example a `.zip` renamed to `.jpg`) is still recognized.
-3. Anything else gets no extract items. Hold Shift while right-clicking to show them for any file.
-
-Limits: archives appended to another file, self-extracting `.exe` files and formats whose signature is far from the file start (iso, dmg, vhd) are recognized by suffix only. Cloud placeholder files (for example OneDrive online-only files) are never read, so they are not downloaded by a right click.
-
 ### Password Book and Bundled Password Plugin
 
 This fork adds a Windows password-book workflow backed by a bundled plugin DLL.
