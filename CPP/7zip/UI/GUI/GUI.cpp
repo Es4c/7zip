@@ -312,6 +312,7 @@ static int Main2()
     }
 
     ecs->MultiArcMode = (ArchivePathsSorted.Size() > 1);
+    ecs->NumArchivesTotal = ArchivePathsSorted.Size();
 
     HRESULT result = ExtractGUI(
           // EXTERNAL_CODECS_VARS_L

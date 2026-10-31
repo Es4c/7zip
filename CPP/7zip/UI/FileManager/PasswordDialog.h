@@ -20,8 +20,10 @@ class CPasswordDialog: public NWindows::NControl::CModalDialog
 public:
   UString Password;
   bool ShowPassword;
+  bool ApplyToRestVisible; // in : show "apply to remaining archives" checkbox
+  bool ApplyToRest;        // in/out : state of that checkbox
   
-  CPasswordDialog(): ShowPassword(false) {}
+  CPasswordDialog(): ShowPassword(false), ApplyToRestVisible(false), ApplyToRest(false) {}
   INT_PTR Create(HWND parentWindow = NULL) { return CModalDialog::Create(IDD_PASSWORD, parentWindow); }
 };
 

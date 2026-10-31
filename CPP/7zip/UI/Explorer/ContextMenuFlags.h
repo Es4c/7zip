@@ -13,6 +13,7 @@ namespace NContextMenuFlags
   const UInt32 kTest = 1 << 4;
   const UInt32 kOpen = 1 << 5;
   const UInt32 kOpenAs = 1 << 6;
+  const UInt32 kSmartExtractDelete = 1 << 7;
 
   const UInt32 kCompress = 1 << 8;
   const UInt32 kCompressTo7z = 1 << 9;

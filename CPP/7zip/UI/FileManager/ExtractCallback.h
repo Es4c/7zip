@@ -236,6 +236,7 @@ class CExtractCallbackImp Z7_final:
   bool _totalBytes_Defined;
 public:
   bool MultiArcMode;
+  unsigned NumArchivesTotal; // number of archives in current extract command (used if MultiArcMode)
   bool ProcessAltStreams;
   bool StreamMode; // set to true, if you want the callee to call GetStream7()
   bool ThereAreMessageErrors;
@@ -297,6 +298,19 @@ public:
   bool _defaultPasswordInitialized;
   bool _defaultPasswordIsDefined;
   UString _defaultPassword;
+
+  /* "Apply to remaining archives" feature:
+     if the user ticks the checkbox in the password dialog, the entered password
+     is tried automatically for the next archives. If an archive rejects it,
+     the shared password is dropped and the user is asked again. */
+  bool _sharedPasswordIsDefined;
+  UString _sharedPassword;
+  bool _applyToRestChecked;      // last state of the checkbox (it is the initial state in next dialog)
+  bool _usingSharedPassword;     // current archive uses _sharedPassword without asking
+  bool _sharedPasswordConfirmed; // some encrypted file of current archive was extracted with _sharedPassword
+  unsigned _numArchivesStarted;
+  void OnPasswordRejected();
+
   NPasswordBook::CState _passwordBook;
 #endif
 
@@ -310,6 +324,7 @@ public:
       _totalFiles_Defined(false)
     , _totalBytes_Defined(false)
     , MultiArcMode(false)
+    , NumArchivesTotal(0)
     , ProcessAltStreams(true)
     , StreamMode(false)
     , ThereAreMessageErrors(false)
@@ -334,6 +349,11 @@ public:
 #if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
     , _defaultPasswordInitialized(false)
     , _defaultPasswordIsDefined(false)
+    , _sharedPasswordIsDefined(false)
+    , _applyToRestChecked(false)
+    , _usingSharedPassword(false)
+    , _sharedPasswordConfirmed(false)
+    , _numArchivesStarted(0)
 #endif
     {}
    

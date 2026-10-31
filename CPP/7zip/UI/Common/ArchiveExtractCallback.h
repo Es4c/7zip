@@ -485,6 +485,11 @@ public:
 
   CMyComPtr2_Create<ICompressProgressInfo, CLocalProgress> LocalProgressSpec;
 
+  /* number of error messages / failed items reported for the current archive.
+     It is reset by InitBeforeNewArchive().
+     Extract() uses it to decide if it's safe to delete the archive after extraction. */
+  mutable UInt32 NumErrors_InCurrentArc;
+
   UInt64 NumFolders;
   UInt64 NumFiles;
   UInt64 NumAltStreams;

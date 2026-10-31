@@ -143,6 +143,7 @@ static const char * const kHelpString =
     "  l : List contents of archive\n"
     "  rn : Rename files in archive\n"
     "  sx : Smart eXtract files with full paths\n"
+    "  sxd : Smart eXtract files with full paths, then move archive to Recycle Bin\n"
     "  t : Test integrity of archive\n"
     "  u : Update files to archive\n"
     "  x : eXtract files with full paths\n"

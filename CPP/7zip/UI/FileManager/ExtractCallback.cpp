@@ -53,12 +53,34 @@ bool CExtractCallbackImp::NeedPasswordRetry()
 #endif
 }
 
+#if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
+/* it's called when current password was rejected by archive.
+   If that password was the shared password ("apply to remaining archives"),
+   we stop to apply it, so the password dialog will be shown. */
+void CExtractCallbackImp::OnPasswordRejected()
+{
+  if (_sharedPasswordIsDefined && PasswordIsDefined && Password == _sharedPassword)
+  {
+    _sharedPasswordIsDefined = false;
+    _sharedPassword.Empty();
+  }
+  _usingSharedPassword = false;
+  _sharedPasswordConfirmed = false;
+}
+#endif
+
 void CExtractCallbackImp::Init()
 {
 #if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
   _defaultPasswordInitialized = false;
   _defaultPasswordIsDefined = false;
   _defaultPassword.Empty();
+  _sharedPasswordIsDefined = false;
+  _sharedPassword.Empty();
+  _applyToRestChecked = false;
+  _usingSharedPassword = false;
+  _sharedPasswordConfirmed = false;
+  _numArchivesStarted = 0;
   _needPasswordRetry = false;
 #endif
   LangString(IDS_PROGRESS_EXTRACTING, _lang_Extracting);
@@ -393,10 +415,22 @@ void SetExtractErrorMessage(Int32 opRes, Int32 encrypted, const wchar_t *fileNam
 Z7_COM7F_IMF(CExtractCallbackImp::SetOperationResult(Int32 opRes, Int32 encrypted))
 {
 #if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
-  if (opRes == NArchive::NExtract::NOperationResult::kWrongPassword)
+  if (_usingSharedPassword && encrypted && opRes == NArchive::NExtract::NOperationResult::kOK)
+    _sharedPasswordConfirmed = true;
+
+  /* a wrong password is not always detected as kWrongPassword (for example, 7z gives data error),
+     so if the shared password was applied automatically and no file was extracted
+     with it yet, we also treat data/CRC errors of encrypted file as "wrong password". */
+  const bool isWrongPassword =
+      opRes == NArchive::NExtract::NOperationResult::kWrongPassword
+      || (_usingSharedPassword && !_sharedPasswordConfirmed && encrypted
+          && (opRes == NArchive::NExtract::NOperationResult::kDataError
+           || opRes == NArchive::NExtract::NOperationResult::kCRCError));
+  if (isWrongPassword)
   {
     if (_passwordBook.WasAutoPasswordUsed())
       _passwordBook.NoteWrongPassword();
+    OnPasswordRejected();
     PasswordIsDefined = false;
     Password.Empty();
     _needPasswordRetry = true;
@@ -458,6 +492,9 @@ HRESULT CExtractCallbackImp::BeforeOpen(const wchar_t *name, bool /* testMode */
   Password = _defaultPassword;
   PasswordWasAsked = false;
   _needPasswordRetry = false;
+  _numArchivesStarted++;
+  _usingSharedPassword = false;
+  _sharedPasswordConfirmed = false;
   _passwordBook.BeginArchive(name);
 #endif
   #ifndef Z7_SFX
@@ -684,8 +721,13 @@ HRESULT CExtractCallbackImp::OpenResult(const CCodecs *codecs, const CArchiveLin
     if ((errorFlags & kpv_ErrorFlags_EncryptedHeadersError) != 0)
       needRetry = true;
 
+    // the shared password ("apply to remaining archives") didn't work for that archive
+    if (_usingSharedPassword)
+      needRetry = true;
+
     if (needRetry)
     {
+      OnPasswordRejected();
       PasswordIsDefined = false;
       Password.Empty();
       _needPasswordRetry = true;
@@ -767,6 +809,13 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     Password = passwordFromBook;
     PasswordIsDefined = true;
   }
+  if (!PasswordIsDefined && _sharedPasswordIsDefined)
+  {
+    // password that user selected to apply to remaining archives
+    Password = _sharedPassword;
+    PasswordIsDefined = true;
+    _usingSharedPassword = true;
+  }
 #endif
   if (PasswordIsDefined)
   {
@@ -784,12 +833,27 @@ Z7_COM7F_IMF(CExtractCallbackImp::CryptoGetTextPassword(BSTR *password))
     const bool showPassword = NExtract::Read_ShowPassword();
     dialog.ShowPassword = showPassword;
     #endif
+    #if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
+    // we show the checkbox only if there are archives after current archive
+    dialog.ApplyToRestVisible = (MultiArcMode && _numArchivesStarted < NumArchivesTotal);
+    dialog.ApplyToRest = _applyToRestChecked;
+    #endif
     ProgressDialog->WaitCreating();
     if (dialog.Create(*ProgressDialog) != IDOK)
       return E_ABORT;
     Password = dialog.Password;
     PasswordIsDefined = true;
 #if !defined(Z7_SFX) && !defined(Z7_NO_CRYPTO)
+    _usingSharedPassword = false;
+    if (dialog.ApplyToRestVisible)
+    {
+      _applyToRestChecked = dialog.ApplyToRest;
+      _sharedPasswordIsDefined = dialog.ApplyToRest;
+      if (dialog.ApplyToRest)
+        _sharedPassword = Password;
+      else
+        _sharedPassword.Empty();
+    }
     _passwordBook.NoteManualPassword();
 #endif
     #ifndef Z7_SFX

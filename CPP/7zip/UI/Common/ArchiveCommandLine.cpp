@@ -385,6 +385,7 @@ bool CArcCommand::IsFromExtractGroup() const
     case NCommandType::kExtract:
     case NCommandType::kExtractFull:
     case NCommandType::kExtractSmart:
+    case NCommandType::kExtractSmartDelete:
       return true;
     default:
       return false;
@@ -398,6 +399,7 @@ NExtract::NPathMode::EEnum CArcCommand::GetPathMode() const
     case NCommandType::kTest:
     case NCommandType::kExtractFull:
     case NCommandType::kExtractSmart:
+    case NCommandType::kExtractSmartDelete:
       return NExtract::NPathMode::kFullPaths;
     default:
       return NExtract::NPathMode::kNoPaths;
@@ -455,6 +457,11 @@ static bool ParseArchiveCommand(const UString &commandString, CArcCommand &comma
   if (s.Len() == 2 && s[0] == 's' && s[1] == 'x')
   {
     command.CommandType = (NCommandType::kExtractSmart);
+    return true;
+  }
+  if (s.Len() == 3 && s[0] == 's' && s[1] == 'x' && s[2] == 'd')
+  {
+    command.CommandType = (NCommandType::kExtractSmartDelete);
     return true;
   }
   return false;
@@ -1712,7 +1719,11 @@ void CArcCmdLineParser::Parse2(CArcCmdLineOptions &options)
     
     if (isExtractGroupCommand)
     {
-      eo.SmartExtractMode = (options.Command.CommandType == NCommandType::kExtractSmart);
+      eo.SmartExtractMode =
+          (options.Command.CommandType == NCommandType::kExtractSmart ||
+           options.Command.CommandType == NCommandType::kExtractSmartDelete);
+      eo.DeleteArchiveAfterExtract =
+          (options.Command.CommandType == NCommandType::kExtractSmartDelete);
 
       if (options.StdOutMode)
       {

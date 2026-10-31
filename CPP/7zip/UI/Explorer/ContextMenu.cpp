@@ -9,6 +9,7 @@
 #include "../../../Windows/COM.h"
 #include "../../../Windows/DLL.h"
 #include "../../../Windows/FileDir.h"
+#include "../../../Windows/FileIO.h"
 #include "../../../Windows/FileName.h"
 #include "../../../Windows/Menu.h"
 #include "../../../Windows/ProcessUtils.h"
@@ -273,6 +274,7 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kOpen,        "Open",        IDS_CONTEXT_OPEN),
   CMD_REC( kExtract,     "Extract",     IDS_CONTEXT_EXTRACT),
   CMD_REC( kSmartExtract, "SmartExtract", IDS_CONTEXT_SMART_EXTRACT),
+  CMD_REC( kSmartExtractDelete, "SmartExtractDelete", IDS_CONTEXT_SMART_EXTRACT_DELETE),
   CMD_REC( kExtractHere, "ExtractHere", IDS_CONTEXT_EXTRACT_HERE),
   CMD_REC( kExtractTo,   "ExtractTo",   IDS_CONTEXT_EXTRACT_TO),
   CMD_REC( kTest,        "Test",        IDS_CONTEXT_TEST),
@@ -450,28 +452,18 @@ static void MyFormatNew_ReducedName(UString &s, const UString &name)
   s = MyFormatNew(s, GetQuotedReducedString(name));
 }
 
-static const char * const kExtractExcludeExtensions =
-  " 3gp"
-  " aac ans ape asc asm asp aspx avi awk"
-  " bas bat bmp"
-  " c cs cls clw cmd cpp csproj css ctl cxx"
-  " def dep dlg dsp dsw"
-  " eps"
-  " f f77 f90 f95 fla flac frm"
-  " gif"
-  " h hpp hta htm html hxx"
-  " ico idl inc ini inl"
-  " java jpeg jpg js"
-  " la lnk log"
-  " mak manifest wmv mov mp3 mp4 mpe mpeg mpg m4a"
-  " ofr ogg"
-  " pac pas pdf php php3 php4 php5 phptml pl pm png ps py pyo"
-  " ra rb rc reg rka rm rtf"
-  " sed sh shn shtml sln sql srt swa"
-  " tcl tex tiff tta txt"
-  " vb vcproj vbs"
-  " mkv wav webm wma wv"
-  " xml xsd xsl xslt"
+/* suffixes of archives that we recognize without reading the file.
+   Files with any other suffix (including audio, image, video, text, etc.)
+   are checked by magic bytes in DoNeedExtract(), because a file can have
+   a wrong suffix (for example, a .zip archive renamed to .jpg).
+   The list must be lowercase, words are separated by space. */
+static const char * const kArchiveExtensions =
+  " 7z zip z01 zipx jar war ear xpi apk ipa appx"
+  " rar r00 001 cab arj lzh lha"
+  " gz gzip tgz tpz bz2 bzip2 tbz2 tbz xz txz lzma lzma86 zst tzst z taz"
+  " tar ova cpio rpm deb udeb ar xar pkg xip"
+  " wim swm esd ppkg"
+  " iso udf img dmg vhd vhdx vmdk vdi qcow qcow2 squashfs cramfs chm"
   " ";
 
 /*
@@ -503,11 +495,84 @@ bool FindExt(const char *p, const UString &name, CStringFinder &finder)
   return finder.FindWord_In_LowCaseAsciiList_NoCase(p, name.Ptr(dotPos + 1));
 }
 
-/* returns false, if extraction of that file extension is not expected */
-static bool DoNeedExtract(const UString &name, CStringFinder &finder)
+#define SIG_AT(off, str) \
+    (size >= (off) + sizeof(str) - 1 && memcmp(p + (off), str, sizeof(str) - 1) == 0)
+
+/* checks the first bytes of a file for signatures of archive formats.
+   We use only strong signatures. Weak or ambiguous ones are not used here:
+   MZ (exe/dll), ELF, Mach-O, OLE compound (doc/xls/msi), flv, swf, mbr/gpt.
+   Formats with signature far from file start (iso, dmg, vhd) are recognized
+   by suffix only. */
+static bool HasArchiveSignature(const Byte *p, size_t size)
 {
-  // for (int y = 0; y < 1000; y++) FindExt(kExtractExcludeExtensions, name);
-  return !FindExt(kExtractExcludeExtensions, name, finder);
+  if (SIG_AT(0, "7z\xBC\xAF\x27\x1C")) return true;               // 7z
+  if (SIG_AT(0, "PK\x03\x04")
+      || SIG_AT(0, "PK\x05\x06")
+      || SIG_AT(0, "PK\x07\x08")) return true;                      // zip
+  if (SIG_AT(0, "Rar!\x1A\x07")) return true;                       // rar, rar5
+  if (SIG_AT(0, "\x1F\x8B\x08")) return true;                       // gzip
+  if (SIG_AT(0, "\xFD" "7zXZ\x00")) return true;                     // xz
+  if (SIG_AT(0, "\x28\xB5\x2F\xFD")) return true;                   // zstd
+  if (SIG_AT(0, "MSCF\0\0\0\0")) return true;                       // cab
+  if (SIG_AT(0, "MSWIM\0\0\0") || SIG_AT(0, "WLPWM\0\0\0")) return true; // wim, esd
+  if (SIG_AT(0, "\x60\xEA")) return true;                            // arj
+  if (SIG_AT(0, "\x1F\x9D")) return true;                            // Z
+  if (SIG_AT(0, "\xED\xAB\xEE\xDB")) return true;                    // rpm
+  if (SIG_AT(0, "!<arch>\n")) return true;                           // ar, deb
+  if (SIG_AT(0, "xar!")) return true;                                 // xar
+  if (SIG_AT(0, "ITSF")) return true;                                 // chm
+  if (SIG_AT(0, "hsqs") || SIG_AT(0, "sqsh")) return true;            // squashfs
+  if (SIG_AT(0, "070701") || SIG_AT(0, "070702")
+      || SIG_AT(0, "070707")) return true;                            // cpio (ascii)
+  if (SIG_AT(257, "ustar")) return true;                              // tar (posix, gnu)
+  if (SIG_AT(0, "BZh") && size >= 10
+      && p[3] >= '1' && p[3] <= '9'
+      && SIG_AT(4, "\x31\x41\x59\x26\x53\x59")) return true;      // bzip2
+  if (size >= 7 && p[2] == '-' && p[3] == 'l'
+      && (p[4] == 'h' || p[4] == 'z') && p[6] == '-') return true;    // lzh
+  return false;
+}
+
+#ifndef FILE_ATTRIBUTE_RECALL_ON_OPEN
+#define FILE_ATTRIBUTE_RECALL_ON_OPEN 0x00040000
+#endif
+#ifndef FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+#define FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS 0x00400000
+#endif
+
+static bool IsArchiveBySignature(const UString &path)
+{
+  NFind::CFileInfo fi;
+  if (!fi.Find(us2fs(path)) || fi.IsDir())
+    return false;
+  /* we don't read cloud placeholder files (OneDrive and others),
+     because reading will start downloading of the file. */
+  if ((fi.Attrib & (FILE_ATTRIBUTE_OFFLINE
+      | FILE_ATTRIBUTE_RECALL_ON_OPEN
+      | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS)) != 0)
+    return false;
+  NIO::CInFile file;
+  if (!file.OpenShared(us2fs(path), true)) // shareForWrite
+    return false;
+  Byte buf[512];
+  UInt32 processed = 0;
+  if (!file.Read(buf, sizeof(buf), processed))
+    return false;
+  return HasArchiveSignature(buf, processed);
+}
+
+/* returns false, if the file doesn't look like an archive.
+   (path) is full path of file.
+   1) if the suffix is the suffix of supported archive: returns true (no file reading).
+   2) otherwise we check magic bytes of file content, even if the suffix says
+      that it is audio, image, video, text or something else. */
+static bool DoNeedExtract(const UString &path, CStringFinder &finder)
+{
+  const int slashPos = path.ReverseFind_PathSepar();
+  const UString name = path.Ptr((unsigned)(slashPos + 1));
+  if (FindExt(kArchiveExtensions, name, finder))
+    return true;
+  return IsArchiveBySignature(path);
 }
 
 // we must use diferent Verbs for Popup subMenu.
@@ -699,7 +764,10 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
 
   if (_fileNames.Size() == 1 && currentCommandID + 14 <= commandIDLast)
   {
-    if (!fi0.IsDir() && DoNeedExtract(fs2us(fi0.Name), finder))
+    if (!fi0.IsDir()
+        // Shift + right click: we show "Open archive" for any file (sfx exe, etc.)
+        && (((flags & Z7_WIN_CMF_EXTENDEDVERBS) != 0)
+            || DoNeedExtract(_fileNames.Front(), finder)))
     {
       // Open
       const bool thereIsMainOpenItem = ((contextMenuFlags & NContextMenuFlags::kOpen) != 0);
@@ -750,7 +818,7 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
 
   ODS("### 150")
 
-  if (_fileNames.Size() > 0 && currentCommandID + 11 <= commandIDLast)
+  if (_fileNames.Size() > 0 && currentCommandID + 12 <= commandIDLast)
   {
     ODS("### needExtract list START")
     const bool needExtendedVerbs = ((flags & Z7_WIN_CMF_EXTENDEDVERBS) != 0);
@@ -765,15 +833,12 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     if (!needExtendedVerbs)
     if (needExtract)
     {
-      UString name;
       const unsigned numItemsCheck = fileNames->Size();
       for (unsigned i = 0; i < numItemsCheck; i++)
       {
         const UString &a = (*fileNames)[i];
-        const int slash = a.ReverseFind_PathSepar();
-        name = a.Ptr(slash + 1);
         // for (int y = 0; y < 600; y++) // for debug
-        const bool needExtr2 = DoNeedExtract(name, finder);
+        const bool needExtr2 = DoNeedExtract(a, finder);
         if (!needExtr2)
         {
           needExtract = needExtr2;
@@ -809,6 +874,15 @@ Z7_COMWF_B CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           CCommandMapItem cmi;
           cmi.Folder = baseFolder;
           AddCommand(kSmartExtract, mainString, cmi);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        }
+
+        if ((contextMenuFlags & NContextMenuFlags::kSmartExtractDelete) != 0)
+        {
+          // Smart Extract and Delete (original archive goes to Recycle Bin after success)
+          CCommandMapItem cmi;
+          cmi.Folder = baseFolder;
+          AddCommand(kSmartExtractDelete, mainString, cmi);
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
         }
 
@@ -1242,6 +1316,7 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       }
       case kExtract:
       case kSmartExtract:
+      case kSmartExtractDelete:
       case kExtractHere:
       case kExtractTo:
       {
@@ -1254,7 +1329,8 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             (cmdID == kExtract), // showDialog
             (cmdID == kExtractTo) && _elimDup.Val, // elimDup
             _writeZone,
-            (cmdID == kSmartExtract)
+            (cmdID == kSmartExtract || cmdID == kSmartExtractDelete),
+            (cmdID == kSmartExtractDelete) // deleteArchive (to Recycle Bin)
             );
         break;
       }

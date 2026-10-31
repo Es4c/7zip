@@ -77,6 +77,7 @@ public:
     kOpen,
     kExtract,
     kSmartExtract,
+    kSmartExtractDelete,
     kExtractHere,
     kExtractTo,
     kTest,

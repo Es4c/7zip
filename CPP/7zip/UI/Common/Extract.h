@@ -27,6 +27,7 @@ struct CExtractOptionsBase
 {
   CBoolPair ElimDup;
   bool SmartExtractMode;
+  bool DeleteArchiveAfterExtract; // move archive (and volumes) to Recycle Bin after successful extraction
 
   bool ExcludeDirItems;
   bool ExcludeFileItems;
@@ -45,6 +46,7 @@ struct CExtractOptionsBase
 
   CExtractOptionsBase():
       SmartExtractMode(false),
+      DeleteArchiveAfterExtract(false),
       ExcludeDirItems(false),
       ExcludeFileItems(false),
       PathMode_Force(false),

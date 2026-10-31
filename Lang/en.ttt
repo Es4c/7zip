@@ -229,6 +229,7 @@ Add to {0}
 Compress and email...
 Compress to {0} and email
 Smart Extract
+Smart Extract and Delete
 2400
 Folders
 &Working folder
@@ -361,6 +362,7 @@ Passwords do not match
 Use only English letters, numbers and special characters (!, #, $, ...) for password
 Password is too long
 Password
+Apply to &remaining archives
 3900
 Elapsed time:
 Remaining time:
